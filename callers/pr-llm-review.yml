@@ -23,7 +23,9 @@ permissions:
   issues: write
 
 concurrency:
-  group: llm-review-${{ github.head_ref || github.event.workflow_run.head_branch || github.ref }}
+  # workflow_dispatch has no head_ref, so without `inputs.pr_number` every
+  # manually dispatched PR in a repo would share one group and cancel the others.
+  group: llm-review-${{ inputs.pr_number || github.head_ref || github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: true
 
 jobs:
