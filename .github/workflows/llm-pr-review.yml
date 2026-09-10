@@ -1,0 +1,70 @@
+name: LLM PR Review (reusable)
+
+# Reusable workflow shared across the whole organization.
+# Callers live in each repository (see README.md). This file is the single
+# source of truth for the LLM review logic.
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: string
+      model:
+        required: false
+        type: string
+        default: anthropic/claude-sonnet-4.5
+      max_diff_chars:
+        required: false
+        type: number
+        default: 60000
+      test_conventions:
+        required: false
+        type: string
+        default: ""
+      gate:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+  issues: write
+
+jobs:
+  review:
+    name: LLM review
+    runs-on: ubuntu-latest
+    steps:
+      # We only check out the TRUSTED tooling repo. The pull-request code is
+      # never checked out and never executed.
+      - name: Fetch review tooling
+        uses: actions/checkout@v4
+        with:
+          repository: fantastics4/.github
+          ref: main
+          path: .llm-tools
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run LLM review
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MODEL: ${{ inputs.model }}
+          MAX_DIFF_CHARS: ${{ inputs.max_diff_chars }}
+          TEST_CONVENTIONS: ${{ inputs.test_conventions }}
+          GATE: ${{ inputs.gate }}
+          OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+        run: python .llm-tools/scripts/llm_review.py
