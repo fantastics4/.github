@@ -36,7 +36,10 @@ for repo in $(gh repo list "$ORG" --limit 200 --json name --jq '.[].name'); do
   target="$BRANCH"
   [ "$MODE" = "direct" ] && target="$base"
 
-  sha=$(gh api "repos/$ORG/$repo/contents/$FILE?ref=$target" --jq .sha 2>/dev/null || true)
+  sha=""
+  if raw=$(gh api "repos/$ORG/$repo/contents/$FILE?ref=$target" --jq '.sha' 2>/dev/null); then
+    sha="$raw"
+  fi
   if [ "$MODE" = "dry-run" ]; then
     echo "plan  $repo (base=$base target=$target exists=${sha:+yes})"
     continue
