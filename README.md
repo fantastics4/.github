@@ -38,21 +38,27 @@ See `develo-web/.github/workflows/pr-llm-review.yml` for a full example
 
 ### Required secret
 
-`OPENROUTER_API_KEY` must exist either as an **organization secret** or, if your
-plan does not allow those, as a **repository secret** in each repository using
-the caller. Create it with:
+`OPENROUTER_API_KEY` must exist as a **repository secret in every repository**
+that uses the caller. Organization secrets are **not** an option here: on
+GitHub Free, organization secrets cannot be used by private repositories
+(only public ones), and all `fantastics4` repositories are private.
+
+Set it per repository with `gh`:
 
 ```bash
-gh secret set OPENROUTER_API_KEY --org fantastics4   # org secret (if available)
-gh secret set OPENROUTER_API_KEY -R fantastics4/develo-web   # repo secret
+gh secret set OPENROUTER_API_KEY -R fantastics4/develo-web
+# repeat for every repository that has the caller
 ```
+
+or via the UI: *repository → Settings → Secrets and variables → Actions →
+New repository secret*.
 
 ### Inputs
 
 | Input | Required | Default | Purpose |
 |---|---|---|---|
 | `pr_number` | yes | — | Pull request to review |
-| `model` | no | `anthropic/claude-sonnet-4.5` | Any OpenRouter model id |
+| `model` | no | `deepseek/deepseek-v4.1-flash` | Any OpenRouter model id |
 | `max_diff_chars` | no | `60000` | Diff size budget (cost control) |
 | `test_conventions` | no | `""` | Repo test layout, so tests are named realistically |
 | `gate` | no | `false` | When `true`, the job fails if the verdict is red |
