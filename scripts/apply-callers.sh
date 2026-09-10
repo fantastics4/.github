@@ -36,13 +36,25 @@ for repo in $(gh repo list "$ORG" --limit 200 --json name --jq '.[].name'); do
   target="$BRANCH"
   [ "$MODE" = "direct" ] && target="$base"
 
+  branch_exists="no"
+  if gh api "repos/$ORG/$repo/git/ref/heads/$target" >/dev/null 2>&1; then
+    branch_exists="yes"
+  fi
+
   sha=""
   if raw=$(gh api "repos/$ORG/$repo/contents/$FILE?ref=$target" --jq '.sha' 2>/dev/null); then
     sha="$raw"
   fi
   if [ "$MODE" = "dry-run" ]; then
-    echo "plan  $repo (base=$base target=$target exists=${sha:+yes})"
+    echo "plan  $repo (base=$base target=$target branch=$branch_exists file=${sha:+yes})"
     continue
+  fi
+
+  if [ "$branch_exists" = "no" ]; then
+    base_sha=$(gh api "repos/$ORG/$repo/git/ref/heads/$base" --jq '.object.sha')
+    gh api -X POST "repos/$ORG/$repo/git/refs" \
+      -f ref="refs/heads/$target" -f sha="$base_sha" >/dev/null
+    echo "branch $repo -> $target"
   fi
 
   args=(-X PUT "repos/$ORG/$repo/contents/$FILE"
