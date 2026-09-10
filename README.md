@@ -36,6 +36,31 @@ jobs:
 See `develo-web/.github/workflows/pr-llm-review.yml` for a full example
 (`pull_request` + `workflow_run` after CI + `workflow_dispatch`).
 
+### PR description: the objective contract
+
+The review judges the diff **against the objective the PR declares**, so the PR
+body should start with this block (the agent rules `pr-objective` /
+`/skill:pr-objective` write it automatically):
+
+````markdown
+<!-- llm-pr-objective -->
+## Objective
+The problem to solve: for whom, and why it matters now.
+
+## Solution
+How this PR solves it, plus the key decisions and tradeoffs.
+
+## Acceptance criteria (optional)
+- [ ] a verifiable outcome
+````
+
+`scripts/llm_review.py` extracts everything between the
+`<!-- llm-pr-objective -->` marker and the next comment marker (`<!--`) or
+horizontal rule, passes it to the model as the review contract, and instructs it
+to flag as **blocking** anything the diff does not deliver, changes silently, or
+omits relative to a stated acceptance criterion. Without the block the review
+still works on the diff alone, but it notes the absence in the summary.
+
 ### Required secret
 
 `OPENROUTER_API_KEY` must exist as a **repository secret in every repository**
