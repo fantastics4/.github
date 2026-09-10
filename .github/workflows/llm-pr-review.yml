@@ -29,6 +29,10 @@ on:
     secrets:
       OPENROUTER_API_KEY:
         required: true
+    outputs:
+      verdict:
+        description: "green when nothing blocks the PR, red otherwise"
+        value: ${{ jobs.review.outputs.verdict }}
 
 permissions:
   contents: read
@@ -40,6 +44,11 @@ jobs:
   review:
     name: LLM review
     runs-on: ubuntu-latest
+    # A job that calls a reusable workflow cannot set `timeout-minutes`, so the
+    # cap lives here (plus the HTTP timeouts inside the script).
+    timeout-minutes: 15
+    outputs:
+      verdict: ${{ steps.run.outputs.verdict }}
     steps:
       # We only check out the TRUSTED tooling repo. The pull-request code is
       # never checked out and never executed.
@@ -57,6 +66,7 @@ jobs:
           python-version: "3.12"
 
       - name: Run LLM review
+        id: run
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

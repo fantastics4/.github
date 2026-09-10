@@ -97,6 +97,20 @@ first, otherwise the first run on a PR will fail.
 > is only available on public repos (Free) or with a paid plan. Until then the
 > verdict is consumed by the fixer LLM / the reviewer, not enforced by GitHub.
 
+### Connecting a fixer LLM
+
+The review output is designed to be consumed by a second LLM that applies the
+fixes and pushes, re-triggering the review until it is green. See
+**[docs/llm-fixer.md](docs/llm-fixer.md)** for the contract, the loop, the
+guardrails and how to automate it. To read a PR's verdict:
+
+```bash
+scripts/extract-verdict.sh fantastics4/develo-web 12 | python3 -m json.tool
+```
+
+The reusable workflow also exposes a `verdict` output (`green` / `red`) so a
+caller can chain a fixer job with `needs.review.outputs.verdict`.
+
 ### Making this repo usable
 
 The reusable workflow checks out this repository (`fantastics4/.github`). Keep it
