@@ -63,6 +63,21 @@ New repository secret*.
 | `test_conventions` | no | `""` | Repo test layout, so tests are named realistically |
 | `gate` | no | `false` | When `true`, the job fails if the verdict is red |
 
+### Rolling it out to every repository
+
+`callers/pr-llm-review.yml` is the caller template and
+`scripts/apply-callers.sh` installs it everywhere:
+
+```bash
+scripts/apply-callers.sh --dry-run   # preview
+scripts/apply-callers.sh             # opens one PR per repository
+scripts/apply-callers.sh --direct    # commit straight to default branches
+```
+
+It skips `.github` and `develo-web` (the latter already has a customized
+caller). Remember the `OPENROUTER_API_KEY` repository secret per repository
+first, otherwise the first run on a PR will fail.
+
 ### What it does on the PR
 
 1. Upserts (creates or updates) one comment marked with `<!-- llm-pr-review -->`.

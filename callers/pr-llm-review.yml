@@ -1,0 +1,42 @@
+name: PR LLM Review
+
+# Automatic LLM code review on pull requests.
+# Calls the organization-wide reusable workflow in fantastics4/.github.
+# Copy this file to .github/workflows/pr-llm-review.yml in a repository.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+  issues: write
+
+concurrency:
+  group: llm-review-${{ github.head_ref || github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion == 'success')
+    uses: fantastics4/.github/.github/workflows/llm-pr-review.yml@main
+    with:
+      pr_number: ${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number }}
+      # `model` defaults to deepseek/deepseek-v4.1-flash (reusable workflow).
+      # `test_conventions` can be overridden per repository, e.g.:
+      # test_conventions: "pytest in tests/; e2e uses playwright"
+    secrets:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
