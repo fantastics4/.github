@@ -53,6 +53,13 @@ gh secret set OPENROUTER_API_KEY -R fantastics4/develo-web
 or via the UI: *repository → Settings → Secrets and variables → Actions →
 New repository secret*.
 
+To set it in every repository at once (key is prompted, never stored in your
+shell history):
+
+```bash
+scripts/set-openrouter-secret.sh
+```
+
 ### Inputs
 
 | Input | Required | Default | Purpose |
