@@ -19,16 +19,20 @@ The JSON block is the machine-readable contract:
 ```json
 {
   "verdict": "red",
+  "blocking_count": 1,
   "summary": "...",
-  "blocking_issues": [
-    { "id": "ISSUE-1", "severity": "high", "title": "...", "file": "...",
-      "lines": "10-20", "problem": "...", "why_it_matters": "...",
-      "exact_fix": "...", "suggested_patch": "..." }
+  "issues": [
+    { "id": "ISSUE-1", "category": "bug", "severity": "high", "blocking": true,
+      "title": "...", "file": "...", "lines": "10-20", "problem": "...",
+      "why_it_matters": "...", "exact_fix": "...", "suggested_patch": "..." }
   ],
   "tests_to_add": [
     { "id": "TEST-1", "type": "unit|integration|e2e", "name": "...",
       "file": "...", "covers_error_cases": ["..."], "assertions": ["..."],
       "why": "..." }
+  ],
+  "human_gates": [
+    { "title": "...", "why": "...", "action": "who must approve or do what" }
   ],
   "definition_of_done": ["exact command"],
   "diff_risks": ["..."],
@@ -36,11 +40,33 @@ The JSON block is the machine-readable contract:
 }
 ```
 
+### What makes it red (the policy)
+
+The verdict is computed **in code** (`scripts/llm_review.py`), not by the model,
+so it is deterministic and cannot drift between runs. An issue only blocks when
+it is a real defect or risk:
+
+| Category | Blocks? |
+|---|---|
+| `security`, `data-loss`, `breaking` | always |
+| `bug` | only at `critical` / `high` severity |
+| `tests`, `style`, `docs`, `perf`, `other` | never |
+
+A missing test is therefore reported under **Sugerencias (no bloquean)** and never
+turns the PR red on its own. Anything needing a human or production decision
+(IAM/permission changes, production plans or applies, migrations) goes to
+`human_gates` and also never blocks — it is a human gate, not a bot gate.
+
+Tune it with `BLOCKING_CATEGORIES` and `BLOCKING_BUG_SEVERITIES`
+(comma-separated), e.g. `BLOCKING_BUG_SEVERITIES=critical,high` is the default and
+`BLOCKING_BUG_SEVERITIES=critical` gives a stricter bar.
+
 ## The loop
 
 1. **Read** the verdict for the PR (see below).
 2. **Stop** if `verdict == "green"`. Done.
-3. **Apply** every `blocking_issues[].exact_fix` and add every `tests_to_add[]`.
+3. **Apply** first the `issues[]` with `"blocking": true`, then the advisory ones,
+   and add every `tests_to_add[]`.
 4. **Verify** locally: run the repo's own tests plus the
    `definition_of_done` commands. Do not push if the repo's tests fail.
 5. **Push** to the PR branch (never to `main`, never force-push).

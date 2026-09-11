@@ -17,7 +17,7 @@ on:
       max_diff_chars:
         required: false
         type: number
-        default: 60000
+        default: 150000
       test_conventions:
         required: false
         type: string

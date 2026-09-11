@@ -9,9 +9,19 @@ A reusable workflow (`workflow_call`) that reviews a PR diff with an LLM through
 **green/red verdict**:
 
 - ✅ **green** — nothing blocking, the code can go up.
-- ❌ **red** — blocking issues, each with file, exact lines and the exact fix,
-  plus the unit / integration / e2e tests to add (aggressive TDD) and the
-  verifications required to turn it green.
+- ❌ **red** — blocking issues, each with file, exact lines and the exact fix.
+
+The verdict is computed **in code**, not by the model, so it cannot drift between
+runs: only `security`, `data-loss` and `breaking` issues, plus `critical`/`high`
+bugs, turn a PR red. Missing tests, style, docs and performance suggestions are
+listed under **Sugerencias (no bloquean)**, and human/production decisions (IAM
+changes, production applies, migrations) go to **Requiere humano / producción** —
+neither affects the verdict. Tune with `BLOCKING_CATEGORIES` /
+`BLOCKING_BUG_SEVERITIES`.
+
+**This check never blocks a merge by itself.** On GitHub Free, private
+repositories cannot require status checks, so `llm-review` is advisory: it is a
+signal and an input for a fixer LLM (or a human), not a gate.
 
 The comment embeds a machine-readable block that a **fixer LLM** can consume:
 
