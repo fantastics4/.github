@@ -45,6 +45,9 @@ OPENROUTER_BASE_URL = os.environ.get(
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "60000"))
 TEST_CONVENTIONS = os.environ.get("TEST_CONVENTIONS", "")
 GATE = os.environ.get("GATE", "false").lower() == "true"
+# Some models (e.g. GLM) reason for minutes at their default effort. Set
+# REASONING_EFFORT (low|high|max) to keep reviews fast; empty = model default.
+REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "").strip()
 
 # The verdict is computed HERE, not by the model, so it stays deterministic and
 # tunable without prompt surgery. An issue only blocks the pull request when it
@@ -279,6 +282,10 @@ def request_verdict(pr, files, diff):
             {"role": "user", "content": user_prompt},
         ],
     }
+    if REASONING_EFFORT:
+        # Reasoning models (GLM, o-series, ...) can spend minutes thinking.
+        # Cap the effort so reviews stay fast and cheap.
+        payload["reasoning"] = {"effort": REASONING_EFFORT}
     response = _request(
         f"{OPENROUTER_BASE_URL}/chat/completions",
         method="POST",
