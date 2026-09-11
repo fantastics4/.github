@@ -51,7 +51,7 @@ REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "").strip()
 # Cap reasoning + answer so a reasoning model cannot run away for minutes.
 # Reasoning at `high` can take several thousand tokens plus the review JSON
 # (~2-3k), so keep the cap well above that. The model allows up to 131072.
-MAX_COMPLETION_TOKENS = int(os.environ.get("MAX_COMPLETION_TOKENS", "32768"))
+MAX_COMPLETION_TOKENS = int(os.environ.get("MAX_COMPLETION_TOKENS", "65536"))
 
 # The verdict is computed HERE, not by the model, so it stays deterministic and
 # tunable without prompt surgery. An issue only blocks the pull request when it
@@ -303,7 +303,17 @@ def request_verdict(pr, files, diff):
         },
         timeout=600,
     )
-    return _parse_json(response["choices"][0]["message"]["content"])
+    content = response["choices"][0]["message"]["content"]
+    try:
+        return _parse_json(content)
+    except Exception:
+        # Surface why the model output did not parse (truncation, stray text...).
+        choice = response["choices"][0]
+        usage = response.get("usage", {})
+        print(f"::warning::unparseable model output: finish_reason="
+              f"{choice.get('finish_reason')}, usage={json.dumps(usage)}")
+        print(f"content length: {len(content)}; tail: {content[-400:]!r}")
+        raise
 
 
 def _cell(values):
