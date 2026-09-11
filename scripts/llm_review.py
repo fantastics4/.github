@@ -48,6 +48,9 @@ GATE = os.environ.get("GATE", "false").lower() == "true"
 # Some models (e.g. GLM) reason for minutes at their default effort. Set
 # REASONING_EFFORT (low|high|max) to keep reviews fast; empty = model default.
 REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "").strip()
+# Cap reasoning + answer so a reasoning model cannot run away for minutes.
+# The review JSON is ~1-2k tokens, so 8000 leaves plenty of headroom.
+MAX_COMPLETION_TOKENS = int(os.environ.get("MAX_COMPLETION_TOKENS", "8000"))
 
 # The verdict is computed HERE, not by the model, so it stays deterministic and
 # tunable without prompt surgery. An issue only blocks the pull request when it
@@ -277,6 +280,7 @@ def request_verdict(pr, files, diff):
     payload = {
         "model": MODEL,
         "temperature": 0,
+        "max_tokens": MAX_COMPLETION_TOKENS,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
