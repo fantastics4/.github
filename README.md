@@ -100,7 +100,7 @@ scripts/set-openrouter-secret.sh
 | Input | Required | Default | Purpose |
 |---|---|---|---|
 | `pr_number` | yes | — | Pull request to review |
-| `model` | no | `deepseek/deepseek-v4.1-flash` | Any OpenRouter model id |
+| `model` | no | `z-ai/glm-5.3-flash` | Any OpenRouter model id |
 | `max_diff_chars` | no | `60000` | Diff size budget (cost control) |
 | `test_conventions` | no | `""` | Repo test layout, so tests are named realistically |
 | `gate` | no | `false` | When `true`, the job fails if the verdict is red |
