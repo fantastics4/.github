@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -208,6 +209,18 @@ not in the diff.
 """
 
 
+def _loads(text: str) -> dict:
+    try:
+        return json.loads(text, strict=False)
+    except json.JSONDecodeError:
+        # Models sometimes emit bare backslashes (\s, \x, ...), which are not
+        # valid JSON escapes. Only the escaping is repaired; the content is
+        # untouched.
+        return json.loads(
+            re.sub(r'\\(?![\"\\/bfnrtu])', r'\\\\', text), strict=False
+        )
+
+
 def _parse_json(content: str) -> dict:
     text = content.strip()
     if text.startswith("```"):
@@ -215,13 +228,18 @@ def _parse_json(content: str) -> dict:
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start, end = text.find("{"), text.rfind("}")
-        if start != -1 and end > start:
-            return json.loads(text[start:end + 1])
-        raise
+    candidates = [text]
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(text[start:end + 1])
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            return _loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    assert last_error is not None
+    raise last_error
 
 
 def extract_objective(body: str) -> str:
@@ -433,10 +451,22 @@ def set_labels(green):
         pass
 
 
+def request_verdict_with_retry(pr, files, diff, attempts=2):
+    """Retry once on transient API errors or unparseable model output."""
+    last_error: Exception | None = None
+    for _ in range(max(1, attempts)):
+        try:
+            return request_verdict(pr, files, diff)
+        except (json.JSONDecodeError, RuntimeError) as exc:
+            last_error = exc
+    assert last_error is not None
+    raise last_error
+
+
 def main():
     pr = gh(f"repos/{REPO}/pulls/{PR_NUMBER}")
     files = fetch_changed_files()
-    data = annotate(request_verdict(pr, files, build_diff(files)))
+    data = annotate(request_verdict_with_retry(pr, files, build_diff(files)))
     green = data["verdict"] == "green"
 
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
