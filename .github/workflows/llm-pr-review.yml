@@ -45,8 +45,9 @@ jobs:
     name: LLM review
     runs-on: ubuntu-latest
     # A job that calls a reusable workflow cannot set `timeout-minutes`, so the
-    # cap lives here (plus the HTTP timeouts inside the script).
-    timeout-minutes: 15
+    # cap lives here (plus the HTTP timeouts inside the script). Large PRs with a
+    # 150k-char diff take several minutes of LLM time, so keep it generous.
+    timeout-minutes: 30
     outputs:
       verdict: ${{ steps.run.outputs.verdict }}
     steps:

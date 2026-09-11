@@ -289,7 +289,7 @@ def request_verdict(pr, files, diff):
             "HTTP-Referer": f"https://github.com/{REPO}",
             "X-Title": "llm-pr-review",
         },
-        timeout=300,
+        timeout=600,
     )
     return _parse_json(response["choices"][0]["message"]["content"])
 
