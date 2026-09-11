@@ -25,7 +25,7 @@ on:
       reasoning_effort:
         required: false
         type: string
-        default: "low"
+        default: "high"
       gate:
         required: false
         type: boolean
