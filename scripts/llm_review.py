@@ -49,8 +49,9 @@ GATE = os.environ.get("GATE", "false").lower() == "true"
 # REASONING_EFFORT (low|high|max) to keep reviews fast; empty = model default.
 REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "").strip()
 # Cap reasoning + answer so a reasoning model cannot run away for minutes.
-# The review JSON is ~1-2k tokens, so 8000 leaves plenty of headroom.
-MAX_COMPLETION_TOKENS = int(os.environ.get("MAX_COMPLETION_TOKENS", "8000"))
+# Reasoning at `high` can take several thousand tokens plus the review JSON
+# (~2-3k), so keep the cap well above that. The model allows up to 131072.
+MAX_COMPLETION_TOKENS = int(os.environ.get("MAX_COMPLETION_TOKENS", "32768"))
 
 # The verdict is computed HERE, not by the model, so it stays deterministic and
 # tunable without prompt surgery. An issue only blocks the pull request when it
