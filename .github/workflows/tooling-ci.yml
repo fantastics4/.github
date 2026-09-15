@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install pinned tooling
-        run: pip install --disable-pip-version-check ruff==0.11.13
+        run: pip install --disable-pip-version-check ruff==0.11.13 pyyaml==6.0.2
       - name: Lint the reviewer tooling
         run: |
           set -euo pipefail
@@ -53,12 +53,20 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
+          # actionlint is pinned by version AND verified by its published checksum.
           curl -sSfL -o /tmp/actionlint.tar.gz \
-            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz" \
+            | sha256sum -c -
           tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
           sudo install /tmp/actionlint /usr/local/bin/actionlint
       - name: Validate workflows
-        run: actionlint
+        # Narrow, documented compatibility: GitHub documents job.workflow_sha and
+        # job.workflow_repository for reusable workflows, but actionlint's job-context
+        # schema (through v1.7.12) does not include them yet. Only those two properties
+        # are ignored; every other actionlint rule stays enforced.
+        run: |
+          actionlint -ignore 'property "workflow_sha" is not defined' -ignore 'property "workflow_repository" is not defined'
       - name: Validate shell scripts
         run: shellcheck scripts/*.sh
       - name: Validate release pins and trigger coverage
