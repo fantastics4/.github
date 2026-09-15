@@ -131,6 +131,7 @@ def openrouter_headers(api_key: str, referer: str = "", title: str = "") -> dict
         headers["HTTP-Referer"] = referer
     if title:
         headers["X-Title"] = title
+    return headers
 
 
 def request_json(

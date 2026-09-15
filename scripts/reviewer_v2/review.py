@@ -6,6 +6,12 @@ compute/validate -> save result -> upload and verify artifact -> publish comment
 publish terminal status -> optional ``gate`` exit policy. A failure at any required
 stage prevents success. PR code is never fetched as anything but data and is never
 executed.
+
+The reusable workflow runs this in two phases: ``prepare`` (pending status, analysis,
+result file) and ``finalize`` (artifact verification, comment, terminal status), with
+``actions/upload-artifact`` between them because current runners do not expose the
+Actions artifact runtime to plain run steps. ``--phase all`` keeps the single-process
+composition used by the offline tests.
 """
 
 from __future__ import annotations
@@ -370,11 +376,15 @@ def _status_owned_by_run(github, sha, run_id) -> bool:
     return status.get("state") == "pending" or run_id in (status.get("target_url") or "")
 
 
-def perform(cfg, github, pr, *, request, api_key, env, log, uploader=None):
-    """Run one review end to end. Returns (exit_code, outputs, envelope, failures).
+def prepare(cfg, github, pr, *, request, api_key, env, log):
+    """Steps 1-4 of the fixed publication order. Returns (exit_code, outputs, envelope).
 
-    Operational failures are converted into a published error state instead of a
-    silent non-run; a red or incomplete result is the reviewer succeeding honestly.
+    Publishes the pending status, accounts for the whole diff, runs the analysis and
+    saves the versioned result. The artifact is uploaded by the workflow between this
+    phase and :func:`finalize` (current runners do not expose the Actions artifact
+    runtime to plain run steps, so ``actions/upload-artifact`` must do it), and
+    terminal publication happens only in :func:`finalize` after the artifact is
+    verified. Operational failures become an error/incomplete envelope, never a raise.
     """
     repository = str((pr.get("base") or {}).get("repo", {}).get("full_name") or env.get("GH_REPO"))
     pr_number = int(pr.get("number") or env.get("PR_NUMBER"))
@@ -384,16 +394,7 @@ def perform(cfg, github, pr, *, request, api_key, env, log, uploader=None):
     server = env.get("GITHUB_SERVER_URL") or "https://github.com"
     run_url = f"{server}/{repository}/actions/runs/{run_id}"
     deadline = _net.Deadline(cfg.budgets.total_budget_seconds)
-    initial = revision(pr)
     shared_heads = _shared_head_prs(github, pr_number, head_sha)
-
-    def store_and_verify(name, path):
-        """The artifact stage is required: store it, then see it on the run."""
-        stored = _artifacts.upload(name, path, env, log=log)
-        _artifacts.verify(github, run_id, name, log=log)
-        return stored
-
-    uploader = uploader or store_and_verify
 
     # 1. Pending before any slow work, and drop any stale PR-level approval.
     _publish_status(github, head_sha, "pending", "LLM review: en curso", run_url, log)
@@ -470,34 +471,56 @@ def perform(cfg, github, pr, *, request, api_key, env, log, uploader=None):
             "use the PR-specific result/artifact, never the shared status alone"
         )
 
-    # 4. Save, upload and verify the artifact (required: no artifact -> no success).
+    # 4. Save the result. The artifact upload is delegated to the workflow, which runs
+    # actions/upload-artifact between this phase and finalize; finalize refuses
+    # success until that artifact is verified on the run.
     result_path = env.get("RESULT_PATH") or os.path.join(
         tempfile.gettempdir(), f"llm-review-{pr_number}.json"
     )
     digest = payload_digest(envelope)
     artifact_name = _result.artifact_name(pr_number, head_sha, run_attempt)
+    envelope["artifact"] = {
+        "name": artifact_name,
+        "run_id": run_id,
+        "payload_digest": digest,
+        "upload": "workflow",
+    }
     write_result(result_path, envelope)
-    try:
-        stored = uploader(artifact_name, result_path)
-        envelope["artifact"] = {
-            "name": artifact_name,
-            "run_id": run_id,
-            "payload_digest": digest,
-            "size": (stored or {}).get("size"),
-        }
-        log({"message": "artifact stored", "artifact": artifact_name})
-    except (_artifacts.ArtifactError, _net.ApiError, OSError) as exc:
-        failures.append({"category": "artifact", "reason": str(exc)})
-        envelope["artifact"] = {
-            "name": artifact_name,
-            "run_id": run_id,
-            "payload_digest": digest,
-            "error": str(exc),
-        }
-        envelope["review_state"] = state = "error"
-        envelope["verdict"] = verdict = None
-        log({"message": "artifact publication failed", "error": str(exc)})
-    write_result(result_path, envelope)
+    outputs = {
+        "result_written": "true",
+        "review_state": envelope.get("review_state") or "",
+        "verdict": envelope.get("verdict") or "",
+        "head_sha": head_sha,
+        "artifact": artifact_name,
+    }
+    write_outputs(env, outputs)
+    return 0, outputs, envelope
+
+
+def _publish_tail(cfg, github, env, log, envelope, failures):
+    """Steps 5-8: freshness recheck, authenticated comment, terminal status, labels.
+
+    Derives every identity from the (already validated) envelope, so it runs
+    identically after an in-process artifact upload (``perform``) or after the
+    workflow's ``actions/upload-artifact`` step (``finalize``).
+    """
+    repository = str(envelope.get("repository") or env.get("GH_REPO") or github.repo)
+    pr_number = int(envelope["pr_number"])
+    head_sha = envelope.get("head_sha") or ""
+    run_id = str(envelope.get("run_id") or env.get("GITHUB_RUN_ID") or "local")
+    server = env.get("GITHUB_SERVER_URL") or "https://github.com"
+    run_url = f"{server}/{repository}/actions/runs/{run_id}"
+    result_path = env.get("RESULT_PATH") or os.path.join(
+        tempfile.gettempdir(), f"llm-review-{pr_number}.json"
+    )
+    state = envelope.get("review_state") or "error"
+    verdict = envelope.get("verdict")
+    artifact_name = (envelope.get("artifact") or {}).get("name") or ""
+    initial = (
+        envelope.get("head_sha") or "",
+        envelope.get("base_sha") or "",
+        envelope.get("inputs_hash") or "",
+    )
 
     # 5. Freshness recheck: never publish a mixed/stale result as current.
     if not _still_current(github, pr_number, initial):
@@ -588,6 +611,83 @@ def perform(cfg, github, pr, *, request, api_key, env, log, uploader=None):
     return exit_code, outputs, envelope, failures
 
 
+def finalize(cfg, github, *, env, log):
+    """Verify the workflow-uploaded artifact, then publish comment/status/labels.
+
+    Returns ``(exit_code, outputs, envelope, failures)``. The artifact is a required
+    stage: when it is missing, expired or attached to another run, the result is
+    demoted to ``error`` and success is prohibited, exactly like an in-process
+    upload failure.
+    """
+    result_path = env.get("RESULT_PATH") or ""
+    if not result_path or not os.path.exists(result_path):
+        print(
+            "::error::finalize requires RESULT_PATH pointing at the prepared result file",
+            file=sys.stderr,
+        )
+        return 2, {"verdict": "", "review_state": "error"}, None, []
+    with open(result_path, encoding="utf-8") as handle:
+        envelope = json.load(handle)
+    failures = list(envelope.get("failures") or [])
+    artifact = envelope.setdefault("artifact", {})
+    run_id = str(envelope.get("run_id") or env.get("GITHUB_RUN_ID") or "local")
+    try:
+        stored = _artifacts.verify(github, run_id, artifact["name"], log=log)
+        artifact.update(
+            {
+                "id": stored.get("id"),
+                "size": stored.get("size_in_bytes"),
+                "upload": "verified",
+            }
+        )
+    except (_artifacts.ArtifactError, _net.ApiError, KeyError, OSError) as exc:
+        failures.append({"category": "artifact", "reason": str(exc)})
+        artifact["error"] = str(exc)
+        envelope["review_state"] = "error"
+        envelope["verdict"] = None
+        log({"message": "artifact verification failed", "error": str(exc)})
+    write_result(result_path, envelope)
+    return _publish_tail(cfg, github, env, log, envelope, failures)
+
+
+def perform(cfg, github, pr, *, request, api_key, env, log, uploader=None):
+    """Single-process composition: prepare, in-process artifact upload, publish.
+
+    Kept for offline tests and local runs; the reusable workflow instead runs
+    ``prepare`` and ``finalize`` as separate steps so the artifact upload happens
+    through ``actions/upload-artifact``. Returns (exit_code, outputs, envelope,
+    failures); operational failures become a published error state, never a silence.
+    """
+    _, _, envelope = prepare(cfg, github, pr, request=request, api_key=api_key, env=env, log=log)
+    pr_number = int(envelope["pr_number"])
+    run_id = str(envelope.get("run_id") or env.get("GITHUB_RUN_ID") or "local")
+    result_path = env.get("RESULT_PATH") or os.path.join(
+        tempfile.gettempdir(), f"llm-review-{pr_number}.json"
+    )
+    failures = list(envelope.get("failures") or [])
+    artifact_name = (envelope.get("artifact") or {}).get("name") or ""
+
+    def store_and_verify(name, path):
+        """The artifact stage is required: store it, then see it on the run."""
+        stored = _artifacts.upload(name, path, env, log=log)
+        _artifacts.verify(github, run_id, name, log=log)
+        return stored
+
+    stage = uploader or store_and_verify
+    try:
+        stored = stage(artifact_name, result_path)
+        envelope["artifact"].update({"size": (stored or {}).get("size"), "upload": "verified"})
+        log({"message": "artifact stored", "artifact": artifact_name})
+    except (_artifacts.ArtifactError, _net.ApiError, OSError) as exc:
+        failures.append({"category": "artifact", "reason": str(exc)})
+        envelope["artifact"]["error"] = str(exc)
+        envelope["review_state"] = "error"
+        envelope["verdict"] = None
+        log({"message": "artifact publication failed", "error": str(exc)})
+    write_result(result_path, envelope)
+    return _publish_tail(cfg, github, env, log, envelope, failures)
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(description="Reviewer v2")
     parser.add_argument(
@@ -595,6 +695,12 @@ def parse_args(argv):
     )
     parser.add_argument(
         "--allow-draft", action="store_true", help="review a draft on purpose (manual dispatch)"
+    )
+    parser.add_argument(
+        "--phase",
+        choices=("all", "prepare", "finalize"),
+        default="all",
+        help="single process (all) or workflow phases around the workflow artifact upload",
     )
     return parser.parse_args(argv)
 
@@ -621,6 +727,25 @@ def main(argv=None, env=None, github=None, request=None, uploader=None) -> int:
     client = github or _github.GitHub(repo, required["GITHUB_TOKEN"], deadline, log=log_event)
     if github is None:
         client.set_trusted_actors(cfg.trusted_actors)
+
+    if args.phase == "finalize":
+        # Finalize re-reads the prepared result; the PR may legitimately have changed
+        # since prepare (the freshness recheck inside the tail decides staleness),
+        # so no admission is repeated here.
+        try:
+            exit_code, outputs, envelope, failures = finalize(cfg, client, env=env, log=log_event)
+        except Exception as exc:  # noqa: BLE001 - last-resort visibility, never silent
+            log_event({"message": "unexpected reviewer failure", "error": str(exc)})
+            return 1
+        if outputs:
+            print(
+                f"review_state={outputs['review_state']} "
+                f"verdict={outputs['verdict'] or '(none)'} "
+                f"blocking={outputs.get('blocking_count', 0)}"
+            )
+        if failures:
+            log_event({"message": "review finished with failures", "count": len(failures)})
+        return exit_code
 
     try:
         pr = client.pull(pr_number)
@@ -653,16 +778,28 @@ def main(argv=None, env=None, github=None, request=None, uploader=None) -> int:
         return 0
 
     try:
-        exit_code, outputs, envelope, failures = perform(
-            cfg,
-            client,
-            pr,
-            request=request,
-            api_key=required["OPENROUTER_API_KEY"],
-            env=env,
-            log=log_event,
-            uploader=uploader,
-        )
+        if args.phase == "prepare":
+            exit_code, outputs, envelope = prepare(
+                cfg,
+                client,
+                pr,
+                request=request,
+                api_key=required["OPENROUTER_API_KEY"],
+                env=env,
+                log=log_event,
+            )
+            failures = []
+        else:
+            exit_code, outputs, envelope, failures = perform(
+                cfg,
+                client,
+                pr,
+                request=request,
+                api_key=required["OPENROUTER_API_KEY"],
+                env=env,
+                log=log_event,
+                uploader=uploader,
+            )
     except Exception as exc:  # noqa: BLE001 - last-resort visibility, never silent
         log_event({"message": "unexpected reviewer failure", "error": str(exc)})
         head_sha = (pr.get("head") or {}).get("sha") or ""
@@ -678,7 +815,7 @@ def main(argv=None, env=None, github=None, request=None, uploader=None) -> int:
     print(
         f"review_state={outputs['review_state']} "
         f"verdict={outputs['verdict'] or '(none)'} "
-        f"blocking={outputs['blocking_count']}"
+        f"blocking={outputs.get('blocking_count', 0)}"
     )
     if failures:
         log_event({"message": "review finished with failures", "count": len(failures)})
