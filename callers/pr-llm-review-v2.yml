@@ -1,0 +1,72 @@
+name: PR LLM Review
+
+# Automatic LLM code review on pull requests (reviewer v2).
+# Install this file as .github/workflows/pr-llm-review.yml in a repository.
+#
+# The `__RELEASE_SHA__` placeholder is replaced by scripts/reviewer_v2/apply_callers.py
+# with the reviewed release commit of fantastics4/.github. It is intentionally NOT a
+# branch: the caller workflow, the reusable workflow and the executed tooling must all
+# come from the same immutable revision.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number (canonical decimal, e.g. 86)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+  issues: write
+  actions: read
+
+jobs:
+  # Admission runs BEFORE the review concurrency slot: an irrelevant edit, an invalid
+  # dispatch or a skipped draft can never cancel a running valid review. It holds no
+  # OpenRouter secret, never checks out the pull request and never executes PR files.
+  admission:
+    name: Admission
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should_review: ${{ steps.decide.outputs.should_review }}
+      pr_number: ${{ steps.decide.outputs.pr_number }}
+      allow_draft: ${{ steps.decide.outputs.allow_draft }}
+    steps:
+      - name: Fetch the trusted admission script
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: fantastics4/.github
+          ref: __RELEASE_SHA__
+          path: .llm-tools
+          persist-credentials: false
+
+      - name: Decide whether this event needs a review
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .llm-tools/scripts/reviewer_v2/admission.py
+
+  review:
+    name: LLM review
+    needs: admission
+    if: needs.admission.outputs.should_review == 'true'
+    concurrency:
+      group: llm-review-${{ github.repository }}-${{ needs.admission.outputs.pr_number }}
+      cancel-in-progress: true
+    uses: fantastics4/.github/.github/workflows/llm-pr-review-v2.yml@__RELEASE_SHA__
+    with:
+      pr_number: ${{ needs.admission.outputs.pr_number }}
+      allow_draft: ${{ needs.admission.outputs.allow_draft == 'true' }}
+      # Per-repository overrides (defaults live in the reusable workflow):
+      # test_conventions: "pytest in tests/; e2e uses playwright"
+      # gate: true
+    secrets:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
