@@ -1,0 +1,169 @@
+name: LLM PR Review v2 (reusable)
+
+# Versioned, hardened reviewer. The legacy workflow (llm-pr-review.yml) is left
+# untouched so existing callers keep working until they migrate to this file.
+#
+# Security: the pull-request code is never checked out and never executed. Only the
+# trusted tooling repository is fetched, at the same revision as this workflow
+# (job.workflow_repository / job.workflow_sha).
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: string
+      model:
+        required: false
+        type: string
+        default: z-ai/glm-5.3-flash
+      max_diff_chars:
+        required: false
+        type: number
+        default: 500000
+      max_completion_tokens:
+        required: false
+        type: number
+        default: 65536
+      reasoning_effort:
+        required: false
+        type: string
+        default: high
+      max_chunks:
+        required: false
+        type: number
+        default: 12
+      request_timeout_seconds:
+        required: false
+        type: number
+        default: 600
+      max_attempts:
+        required: false
+        type: number
+        default: 3
+      total_budget_seconds:
+        required: false
+        type: number
+        default: 1500
+      completion_reserve_tokens:
+        required: false
+        type: number
+        default: 4096
+      model_context_tokens:
+        required: false
+        type: number
+        default: 200000
+      max_comment_chars:
+        required: false
+        type: number
+        default: 60000
+      test_conventions:
+        required: false
+        type: string
+        default: ""
+      gate:
+        required: false
+        type: boolean
+        default: false
+      allow_draft:
+        required: false
+        type: boolean
+        default: false
+      blocking_categories:
+        required: false
+        type: string
+        default: security,data-loss,breaking
+      blocking_bug_severities:
+        required: false
+        type: string
+        default: critical,high
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+    outputs:
+      verdict:
+        description: "green/red for complete reviews; empty for incomplete/error/stale"
+        value: ${{ jobs.review.outputs.verdict }}
+      review_state:
+        description: "complete | incomplete | error | stale | skipped"
+        value: ${{ jobs.review.outputs.review_state }}
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+  issues: write
+  actions: read
+
+jobs:
+  review:
+    name: LLM review v2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      verdict: ${{ steps.run.outputs.verdict }}
+      review_state: ${{ steps.run.outputs.review_state }}
+    steps:
+      - name: Fetch review tooling (trusted, pinned to this workflow revision)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .llm-tools
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Assert the tooling came from the expected repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ job.workflow_repository }}" != "fantastics4/.github" ]; then
+            echo "::error::unexpected tooling repository ${{ job.workflow_repository }}"
+            exit 1
+          fi
+          test -f .llm-tools/scripts/reviewer_v2/review.py
+
+      - name: Run LLM review v2
+        id: run
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MODEL: ${{ inputs.model }}
+          MAX_DIFF_CHARS: ${{ inputs.max_diff_chars }}
+          MAX_COMPLETION_TOKENS: ${{ inputs.max_completion_tokens }}
+          REASONING_EFFORT: ${{ inputs.reasoning_effort }}
+          MAX_CHUNKS: ${{ inputs.max_chunks }}
+          REQUEST_TIMEOUT_SECONDS: ${{ inputs.request_timeout_seconds }}
+          MAX_ATTEMPTS: ${{ inputs.max_attempts }}
+          TOTAL_BUDGET_SECONDS: ${{ inputs.total_budget_seconds }}
+          COMPLETION_RESERVE_TOKENS: ${{ inputs.completion_reserve_tokens }}
+          MODEL_CONTEXT_TOKENS: ${{ inputs.model_context_tokens }}
+          MAX_COMMENT_CHARS: ${{ inputs.max_comment_chars }}
+          TEST_CONVENTIONS: ${{ inputs.test_conventions }}
+          GATE: ${{ inputs.gate }}
+          ALLOW_DRAFT: ${{ inputs.allow_draft }}
+          BLOCKING_CATEGORIES: ${{ inputs.blocking_categories }}
+          BLOCKING_BUG_SEVERITIES: ${{ inputs.blocking_bug_severities }}
+          OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+          TOOLING_SHA: ${{ job.workflow_sha }}
+          RESULT_PATH: ${{ runner.temp }}/llm-review-result.json
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "${{ inputs.allow_draft }}" = "true" ]; then extra+=(--allow-draft); fi
+          python3 .llm-tools/scripts/reviewer_v2/review.py "${extra[@]}"
+
+      - name: Upload reviewer diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: llm-review-diagnostics-${{ inputs.pr_number }}
+          path: ${{ runner.temp }}/llm-review-result.json
+          if-no-files-found: ignore
+          retention-days: 7

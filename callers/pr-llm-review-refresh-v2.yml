@@ -1,0 +1,36 @@
+name: PR LLM Review base refresh
+
+# A review result is bound to the base branch tip, so pushing to an integration
+# branch invalidates completed reviews of the PRs that target it. This trusted
+# dispatcher asks the reviewer to run again; it never reviews code and never calls
+# the model. Install as .github/workflows/pr-llm-review-refresh.yml.
+
+on:
+  push:
+    branches: __BRANCHES__
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  # Narrowly scoped: only workflow_dispatch needs write, and only here.
+  actions: write
+
+jobs:
+  refresh:
+    name: Refresh reviews after a base push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch the trusted refresh script
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: fantastics4/.github
+          ref: __RELEASE_SHA__
+          path: .llm-tools
+          persist-credentials: false
+
+      - name: Dispatch reviews for pull requests whose base moved
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REFRESH_MAX_PRS: "25"
+        run: python3 .llm-tools/scripts/reviewer_v2/base_refresh.py
