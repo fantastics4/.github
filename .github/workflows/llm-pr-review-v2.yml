@@ -101,8 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
-      verdict: ${{ steps.run.outputs.verdict }}
-      review_state: ${{ steps.run.outputs.review_state }}
+      verdict: ${{ steps.finalize.outputs.verdict }}
+      review_state: ${{ steps.finalize.outputs.review_state }}
     steps:
       - name: Fetch review tooling (trusted, pinned to this workflow revision)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -127,8 +127,8 @@ jobs:
           fi
           test -f .llm-tools/scripts/reviewer_v2/review.py
 
-      - name: Run LLM review v2
-        id: run
+      - name: Run LLM review v2 (prepare)
+        id: prepare
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -157,10 +157,52 @@ jobs:
           set -euo pipefail
           extra=()
           if [ "${{ inputs.allow_draft }}" = "true" ]; then extra+=(--allow-draft); fi
-          python3 .llm-tools/scripts/reviewer_v2/review.py "${extra[@]}"
+          python3 .llm-tools/scripts/reviewer_v2/review.py --phase prepare "${extra[@]}"
 
-      - name: Upload reviewer diagnostics on failure
-        if: failure()
+      # Required stage between the phases: current runners do not expose the Actions
+      # artifact runtime to run steps, so the result artifact is uploaded here and
+      # verified through the API by the finalize phase before anything is published.
+      - name: Upload the reviewed result artifact
+        if: always() && steps.prepare.outputs.result_written == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.prepare.outputs.artifact }}
+          path: ${{ runner.temp }}/llm-review-result.json
+          if-no-files-found: error
+
+      - name: Finalize the review (verify artifact, publish comment and status)
+        id: finalize
+        if: always() && steps.prepare.outputs.result_written == 'true'
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          MODEL: ${{ inputs.model }}
+          MAX_DIFF_CHARS: ${{ inputs.max_diff_chars }}
+          MAX_COMPLETION_TOKENS: ${{ inputs.max_completion_tokens }}
+          REASONING_EFFORT: ${{ inputs.reasoning_effort }}
+          MAX_CHUNKS: ${{ inputs.max_chunks }}
+          REQUEST_TIMEOUT_SECONDS: ${{ inputs.request_timeout_seconds }}
+          MAX_ATTEMPTS: ${{ inputs.max_attempts }}
+          TOTAL_BUDGET_SECONDS: ${{ inputs.total_budget_seconds }}
+          COMPLETION_RESERVE_TOKENS: ${{ inputs.completion_reserve_tokens }}
+          MODEL_CONTEXT_TOKENS: ${{ inputs.model_context_tokens }}
+          MAX_COMMENT_CHARS: ${{ inputs.max_comment_chars }}
+          TEST_CONVENTIONS: ${{ inputs.test_conventions }}
+          GATE: ${{ inputs.gate }}
+          ALLOW_DRAFT: ${{ inputs.allow_draft }}
+          BLOCKING_CATEGORIES: ${{ inputs.blocking_categories }}
+          BLOCKING_BUG_SEVERITIES: ${{ inputs.blocking_bug_severities }}
+          OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+          TOOLING_SHA: ${{ job.workflow_sha }}
+          RESULT_PATH: ${{ runner.temp }}/llm-review-result.json
+        run: |
+          set -euo pipefail
+          python3 .llm-tools/scripts/reviewer_v2/review.py --phase finalize
+
+      - name: Upload reviewer diagnostics on early failure
+        if: failure() && steps.prepare.outputs.result_written != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: llm-review-diagnostics-${{ inputs.pr_number }}

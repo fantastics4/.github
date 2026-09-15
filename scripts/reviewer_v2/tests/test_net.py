@@ -247,3 +247,39 @@ class BlobTests(unittest.TestCase):
             sleeper=lambda _s: None,
         )
         self.assertEqual(b'{"a": 1}', captured["body"])
+
+
+class OpenRouterHeadersTests(unittest.TestCase):
+    """Regression: openrouter_headers used to build the dict without returning it,
+    so every model request left without an Authorization header (live HTTP 401:
+    'No cookie auth credentials found')."""
+
+    def test_should_return_the_authorization_header(self):
+        headers = _net.openrouter_headers("sk-or-test")
+        self.assertEqual("Bearer sk-or-test", headers["Authorization"])
+        self.assertEqual("application/json", headers["Accept"])
+
+    def test_should_include_the_optional_attribution_headers(self):
+        headers = _net.openrouter_headers(
+            "sk-or-test", referer="https://github.com/fantastics4/.github", title="llm-pr-review"
+        )
+        self.assertEqual("Bearer sk-or-test", headers["Authorization"])
+        self.assertEqual("https://github.com/fantastics4/.github", headers["HTTP-Referer"])
+        self.assertEqual("llm-pr-review", headers["X-Title"])
+
+    def test_should_attach_the_authorization_header_to_the_actual_request(self):
+        captured = {}
+
+        def opener(request, timeout=None):
+            captured["auth"] = request.get_header("Authorization")
+            return FakeResponse({"ok": True})
+
+        _net.request_json(
+            "https://openrouter.ai/api/v1/chat/completions",
+            method="POST",
+            payload={"a": 1},
+            headers=_net.openrouter_headers("sk-or-live-regression"),
+            opener=opener,
+            sleeper=lambda _s: None,
+        )
+        self.assertEqual("Bearer sk-or-live-regression", captured["auth"])

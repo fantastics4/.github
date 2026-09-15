@@ -69,6 +69,13 @@ def migration_problems() -> list:
         found.append("the reusable workflow does not run the v2 entry point")
     if "persist-credentials: false" not in text:
         found.append("the tooling checkout keeps persisted credentials")
+    if "--phase prepare" not in text or "--phase finalize" not in text:
+        found.append("the reusable workflow must run prepare/finalize around the artifact upload")
+    if "actions/upload-artifact@" not in text:
+        found.append(
+            "the reusable workflow must upload the result artifact with actions/upload-artifact "
+            "(run steps cannot reach the Actions artifact runtime)"
+        )
     entry = ROOT / "scripts" / "reviewer_v2" / "review.py"
     if not entry.exists():
         found.append("the v2 entry point is missing")
