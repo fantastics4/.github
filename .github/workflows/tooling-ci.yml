@@ -1,0 +1,75 @@
+name: Tooling CI
+
+# Offline tests for the reviewer tooling: no credentials, no model calls, no writes
+# outside the runner. Every regression case runs here on changes to the tooling.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "callers/**"
+      - ".github/workflows/**"
+      - "docs/**"
+      - "specs/**"
+      - "README.md"
+      - "pyproject.toml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Python tests and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned tooling
+        run: pip install --disable-pip-version-check ruff==0.11.13
+      - name: Lint the reviewer tooling
+        run: |
+          set -euo pipefail
+          ruff check scripts/reviewer_v2
+          ruff format --check scripts/reviewer_v2
+      - name: Run the offline regression suite
+        run: PYTHONPATH=scripts python3 -m unittest discover -s scripts/reviewer_v2/tests -t scripts -v
+
+  validate:
+    name: Workflow and shell validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install validators
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          curl -sSfL -o /tmp/actionlint.tar.gz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo install /tmp/actionlint /usr/local/bin/actionlint
+      - name: Validate workflows
+        run: actionlint
+      - name: Validate shell scripts
+        run: shellcheck scripts/*.sh
+      - name: Validate release pins and trigger coverage
+        run: PYTHONPATH=scripts python3 scripts/reviewer_v2/selfcheck.py
+
+  reusable-wrapper:
+    name: Reusable wrapper runs its own release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Assert the wrapper is migrated together with the tooling
+        run: python3 scripts/reviewer_v2/selfcheck.py --check-migration
