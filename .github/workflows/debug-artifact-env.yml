@@ -1,0 +1,31 @@
+name: Debug artifact runtime env (temporary)
+
+# Temporary diagnostic: does a plain `run:` step see the Actions artifact
+# runtime environment that scripts/reviewer_v2/artifacts.py requires?
+# Prints only SET/EMPTY booleans - never variable values.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: Probe ACTIONS_RUNTIME_* in a run step
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe environment
+        run: |
+          for v in ACTIONS_RUNTIME_URL ACTIONS_RUNTIME_TOKEN GITHUB_RUN_ID ACTIONS_RESULTS_URL; do
+            if [ -n "${!v:-}" ]; then
+              echo "$v: SET"
+            else
+              echo "$v: EMPTY"
+            fi
+          done
+      - name: Same probe from Python (as reviewer sees it)
+        run: |
+          python3 - <<'PY'
+          import os
+          for k in ("ACTIONS_RUNTIME_URL", "ACTIONS_RUNTIME_TOKEN", "GITHUB_RUN_ID", "ACTIONS_RESULTS_URL"):
+              print(f"{k}: {'SET' if os.environ.get(k) else 'EMPTY'}")
+          PY
