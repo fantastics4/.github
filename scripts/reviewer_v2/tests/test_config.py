@@ -15,7 +15,7 @@ class DefaultTests(unittest.TestCase):
 
     def test_should_keep_the_reviewed_model_and_budgets(self):
         self.assertEqual("z-ai/glm-5.3-flash", self.config.model)
-        self.assertEqual("high", self.config.reasoning_effort)
+        self.assertEqual("medium", self.config.reasoning_effort)
         self.assertEqual(500000, self.config.budgets.max_diff_chars)
         self.assertEqual(65536, self.config.budgets.max_completion_tokens)
         self.assertFalse(self.config.gate)
@@ -42,7 +42,7 @@ class DefaultTests(unittest.TestCase):
             "model": "`z-ai/glm-5.3-flash`",
             "max_diff_chars": "`500000`",
             "max_completion_tokens": "`65536`",
-            "reasoning_effort": "`high`",
+            "reasoning_effort": "`medium`",
             "gate": "`false`",
         }
         for name, value in expected.items():

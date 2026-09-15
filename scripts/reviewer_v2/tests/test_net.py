@@ -178,7 +178,7 @@ class ModelEnvelopeTests(unittest.TestCase):
         self.assertEqual("json_schema", payload["response_format"]["type"])
         self.assertTrue(payload["response_format"]["json_schema"]["strict"])
         self.assertTrue(payload["provider"]["require_parameters"])
-        self.assertEqual("high", payload["reasoning"]["effort"])
+        self.assertEqual("medium", payload["reasoning"]["effort"])
 
     def test_should_retry_once_on_schema_failure_and_never_accept_weaker_output(self):
         config = _config.Config.from_env({})
