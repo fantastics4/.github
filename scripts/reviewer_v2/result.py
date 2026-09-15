@@ -71,8 +71,9 @@ def inputs_hash(pr) -> str:
     )
 
 
-def artifact_name(pr_number, head_sha: str) -> str:
-    return f"{ARTIFACT_PREFIX}-{pr_number}-{head_sha[:12]}"
+def artifact_name(pr_number, head_sha: str, attempt=1) -> str:
+    """Unique per attempt: the artifact API rejects a duplicate name within one run."""
+    return f"{ARTIFACT_PREFIX}-{pr_number}-{head_sha[:12]}-a{int(attempt or 1)}"
 
 
 def annotate(issues, policy):
@@ -138,6 +139,7 @@ def build_envelope(
         "chunks": (extra or {}).get("chunks", 0),
         "unverifiable_findings": (extra or {}).get("unverifiable_findings", []),
         "failures": (extra or {}).get("failures", []),
+        "usage": (extra or {}).get("usage", {}),
     }
     return envelope
 
@@ -154,7 +156,8 @@ def compact_envelope(envelope, artifact=None) -> dict:
         "failed": len(coverage.get("failed") or []),
         "missing": len(coverage.get("missing") or []),
     }
-    compact["reason"] = (envelope.get("failures") or [None])[0]
+    failures = envelope.get("failures") or []
+    compact["reason"] = (failures[0] or {}).get("reason") if failures else None
     compact["artifact"] = artifact
 
 

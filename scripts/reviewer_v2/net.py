@@ -154,7 +154,16 @@ def request_json(
     bounded by the caller and by the shared :class:`Deadline`.
     """
     attempts = max(1, int(attempts))
-    body_bytes = json.dumps(payload).encode("utf-8") if payload is not None else None
+    # Bytes go on the wire untouched (artifacts are uploaded as blobs); anything else is
+    # serialised as JSON. Encoding bytes with json.dumps would corrupt the body and the
+    # declared Content-Length.
+    is_blob = isinstance(payload, bytes | bytearray)
+    if is_blob:
+        body_bytes = bytes(payload)
+    elif payload is not None:
+        body_bytes = json.dumps(payload).encode("utf-8")
+    else:
+        body_bytes = None
     last: Exception | None = None
 
     for attempt in range(1, attempts + 1):
@@ -171,6 +180,8 @@ def request_json(
             request.add_header(key, value)
         if body_bytes is not None and not (headers or {}).get("Content-Type"):
             request.add_header("Content-Type", "application/json")
+        if is_blob:
+            request.add_header("Content-Length", str(len(body_bytes)))
 
         started = clock()
         try:

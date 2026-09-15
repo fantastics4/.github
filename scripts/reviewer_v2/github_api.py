@@ -42,6 +42,7 @@ class GitHub:
         self.attempts = attempts
         self.log = log
         self.headers = _net.github_headers(token)
+        self._trusted_actors = ()
         self._opener = opener
         self._sleeper = sleeper
         self._clock = clock
@@ -94,7 +95,7 @@ class GitHub:
     # -- comments --------------------------------------------------------------
     @property
     def trusted_actors(self):
-        return self._trusted_actors
+        return getattr(self, "_trusted_actors", ())
 
     def set_trusted_actors(self, actors):
         self._trusted_actors = tuple(actors)
@@ -104,7 +105,7 @@ class GitHub:
 
     def trusted_comments(self, pr_number):
         """Comments authored by a trusted actor whose body starts with the marker."""
-        actors = getattr(self, "_trusted_actors", ())
+        actors = self.trusted_actors
         found = []
         for comment in self.comments(pr_number):
             login = ((comment.get("user") or {}).get("login") or "").strip()

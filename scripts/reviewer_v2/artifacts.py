@@ -68,7 +68,7 @@ def upload(name: str, path: str, env, request=None, log=None) -> dict:
     request(
         f"{container}?itemPath={urllib.parse.quote(item)}",
         method="PUT",
-        payload=blob.decode("latin-1"),
+        payload=blob,
         headers={**file_headers, "Content-Length": str(size)},
         attempts=2,
         parse=False,

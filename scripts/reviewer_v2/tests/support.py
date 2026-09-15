@@ -274,7 +274,8 @@ class FakeGitHub:
         if method == "DELETE" and "/labels/" in path:
             return None
         if "/pulls?" in path:
-            return list(self.open_pulls) if "page=1" in path else []
+            page = "page=1" in path or "page=" not in path
+            return list(self.open_pulls) if page else []
         if "/actions/runs/" in path and path.endswith("/artifacts"):
             return {"artifacts": list(self.artifacts)}
         if "/commits/" in path and path.endswith("/status"):

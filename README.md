@@ -9,8 +9,9 @@ The reviewer publishes, on every reviewed revision:
 - **one trusted sticky comment** (`<!-- llm-pr-review -->`) with the findings,
 - a **label** `llm-review:green` / `llm-review:red`,
 - a **custom commit status** `llm-review` on the reviewed head SHA,
-- a **versioned result artifact** (`llm-review-result-<pr>-<sha12>`) with a payload
-  digest, used for large results and as verifiable evidence.
+- a **versioned result artifact** (`llm-review-result-<pr>-<sha12>-a<attempt>`) with a
+  payload digest, used for large results and as verifiable evidence. The attempt is part of
+  the name because the artifact API rejects a repeated name inside one run.
 
 ### Two workflows, one migration window
 
@@ -98,6 +99,9 @@ results the legacy `verdict` output is empty, so an old consumer cannot read it 
   the result as `stale` instead of publishing it as current.
 - `pending` is posted before the model call; a rerun supersedes an older success instead
   of leaving it in place. Consumers must treat an abandoned `pending` as unreviewed.
+- When two open pull requests share a head SHA, the custom status is inherently ambiguous
+  (statuses are keyed by SHA, not by PR). The result records `shared_head_prs`, states the
+  limitation, and consumers must use the PR-specific result/artifact — never the bare status.
 - Base-branch pushes invalidate reviews of PRs that target that branch. The trusted
   dispatcher `pr-llm-review-refresh.yml` enumerates the affected open PRs and requests a
   review through `workflow_dispatch` (the one token-generated event that starts a run);

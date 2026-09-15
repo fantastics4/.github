@@ -338,6 +338,28 @@ def _publish_status(github, head_sha, state, description, target_url, log):
         return str(exc)
 
 
+def _shared_head_prs(github, pr_number, head_sha) -> list:
+    """Other open pull requests with the same head SHA (the status is SHA-keyed)."""
+    if not head_sha:
+        return []
+    try:
+        pulls = github.call(f"/repos/{github.repo}/pulls?state=open&per_page=100")
+    except _net.ApiError:
+        return []
+    if not isinstance(pulls, list):
+        return []
+    others = []
+    for item in pulls:
+        if not isinstance(item, dict):
+            continue
+        if (item.get("head") or {}).get("sha") != head_sha:
+            continue
+        number = int(item.get("number") or 0)
+        if number and number != int(pr_number):
+            others.append(number)
+    return sorted(others)
+
+
 def _status_owned_by_run(github, sha, run_id) -> bool:
     try:
         status = github.latest_status(sha, _config.STATUS_CONTEXT)
@@ -354,7 +376,6 @@ def perform(cfg, github, pr, *, request, api_key, env, log, uploader=None):
     Operational failures are converted into a published error state instead of a
     silent non-run; a red or incomplete result is the reviewer succeeding honestly.
     """
-    uploader = uploader or (lambda name, path: _artifacts.upload(name, path, env, log=log))
     repository = str((pr.get("base") or {}).get("repo", {}).get("full_name") or env.get("GH_REPO"))
     pr_number = int(pr.get("number") or env.get("PR_NUMBER"))
     head_sha = (pr.get("head") or {}).get("sha") or ""
@@ -364,6 +385,15 @@ def perform(cfg, github, pr, *, request, api_key, env, log, uploader=None):
     run_url = f"{server}/{repository}/actions/runs/{run_id}"
     deadline = _net.Deadline(cfg.budgets.total_budget_seconds)
     initial = revision(pr)
+    shared_heads = _shared_head_prs(github, pr_number, head_sha)
+
+    def store_and_verify(name, path):
+        """The artifact stage is required: store it, then see it on the run."""
+        stored = _artifacts.upload(name, path, env, log=log)
+        _artifacts.verify(github, run_id, name, log=log)
+        return stored
+
+    uploader = uploader or store_and_verify
 
     # 1. Pending before any slow work, and drop any stale PR-level approval.
     _publish_status(github, head_sha, "pending", "LLM review: en curso", run_url, log)
@@ -428,15 +458,24 @@ def perform(cfg, github, pr, *, request, api_key, env, log, uploader=None):
             "chunks": len(plan.chunks),
             "unverifiable_findings": unverifiable,
             "failures": failures,
+            "usage": aggregate.usage,
         },
     )
+
+    if shared_heads:
+        envelope["shared_head_prs"] = shared_heads
+        envelope["limitations"].append(
+            "another open pull request shares this head SHA (pull requests "
+            f"{shared_heads}); the llm-review status is keyed by SHA, so consumers must "
+            "use the PR-specific result/artifact, never the shared status alone"
+        )
 
     # 4. Save, upload and verify the artifact (required: no artifact -> no success).
     result_path = env.get("RESULT_PATH") or os.path.join(
         tempfile.gettempdir(), f"llm-review-{pr_number}.json"
     )
     digest = payload_digest(envelope)
-    artifact_name = _result.artifact_name(pr_number, head_sha)
+    artifact_name = _result.artifact_name(pr_number, head_sha, run_attempt)
     write_result(result_path, envelope)
     try:
         stored = uploader(artifact_name, result_path)

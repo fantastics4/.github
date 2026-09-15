@@ -200,6 +200,19 @@ class FlowTest(unittest.TestCase):
         env = dict(self.env, GITHUB_TOKEN="t", PR_NUMBER="086", OPENROUTER_API_KEY="k")
         self.assertEqual(2, R.main([], env=env, github=support.FakeGitHub(pr=self.pr)))
 
+    def test_should_record_a_head_sha_shared_with_another_pull_request(self):
+        other = support.pr_payload(number=9)  # same head SHA, different PR
+        github = support.FakeGitHub(pr=self.pr, open_pulls=[self.pr, other])
+        code, outputs, envelope, _ = self.run_flow(github)
+        self.assertEqual(0, code)
+        self.assertEqual([9], envelope.get("shared_head_prs"))
+        self.assertTrue(any("shares this head SHA" in item for item in envelope["limitations"]))
+
+    def test_should_not_flag_a_shared_head_when_none_exists(self):
+        github = support.FakeGitHub(pr=self.pr)
+        _, _, envelope, _ = self.run_flow(github)
+        self.assertNotIn("shared_head_prs", envelope)
+
     def test_should_write_an_empty_legacy_verdict_for_non_complete_results(self):
         github = support.FakeGitHub(pr=self.pr)
         github.queue_pr(support.pr_payload(base="d" * 40))

@@ -209,3 +209,41 @@ class ModelEnvelopeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlobTests(unittest.TestCase):
+    def test_should_send_bytes_untouched_instead_of_json_encoding_them(self):
+        captured = {}
+
+        def opener(request, timeout=None):
+            captured["body"] = request.data
+            captured["headers"] = dict(request.header_items())
+            return FakeResponse({"ok": True})
+
+        blob = b"PK\x03\x04\x00\xff\xfe zip bytes"
+        _net.request_json(
+            "https://upload.example/x",
+            method="PUT",
+            payload=blob,
+            headers={"Content-Type": "application/octet-stream"},
+            opener=opener,
+            sleeper=lambda _s: None,
+        )
+        self.assertEqual(blob, captured["body"])
+        self.assertEqual(str(len(blob)), captured["headers"]["Content-length"])
+
+    def test_should_still_json_encode_regular_payloads(self):
+        captured = {}
+
+        def opener(request, timeout=None):
+            captured["body"] = request.data
+            return FakeResponse({"ok": True})
+
+        _net.request_json(
+            "https://api.example/x",
+            method="POST",
+            payload={"a": 1},
+            opener=opener,
+            sleeper=lambda _s: None,
+        )
+        self.assertEqual(b'{"a": 1}', captured["body"])

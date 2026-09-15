@@ -12,7 +12,7 @@ For every reviewed revision the reviewer publishes, on the PR head commit:
 | Sticky comment | starts with `<!-- llm-pr-review -->`; carries a `llm-review-result-v1` block, or a `llm-review-compact-v1` block plus an artifact reference |
 | Label | `llm-review:green` / `llm-review:red` (removed while a result is incomplete/error) |
 | Commit status | context `llm-review`, state `success` / `failure` / `error` |
-| Artifact | `llm-review-result-<pr>-<sha12>` on the reviewer run, with a payload digest |
+| Artifact | `llm-review-result-<pr>-<sha12>-a<attempt>` on the reviewer run, with a payload digest |
 
 ### Reading it
 
@@ -149,6 +149,10 @@ review would not re-trigger.
   is not a fix. Red means real findings: fix them or explain them.
 - **Cost.** Each review is a paid model call; the budgets (`max_diff_chars`,
   `max_completion_tokens`, chunk limit, run deadline) bound it. Fixer loops multiply it.
+- **Shared head SHA.** Two open PRs can point at the same commit; the `llm-review` status is
+  keyed by SHA, so it cannot distinguish them. The envelope records `shared_head_prs` and the
+  extractor also validates the PR number and the run's PR association — always resolve the
+  result through `extract.py` for the PR you are about to change, never from the status alone.
 - **Artifact expiry.** Artifacts expire (default retention); an expired artifact is exit
   code 2, not a green result. Re-run the review instead.
 - **`confidence` is advisory.** Gate on `verdict` + the repository's tests.
