@@ -28,7 +28,7 @@ on:
       reasoning_effort:
         required: false
         type: string
-        default: high
+        default: medium
       max_chunks:
         required: false
         type: number

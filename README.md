@@ -57,7 +57,7 @@ on:
 | `model` | no | `z-ai/glm-5.3-flash` | Any OpenRouter model id that supports strict structured output |
 | `max_diff_chars` | no | `500000` | Diff size budget (cost control) |
 | `max_completion_tokens` | no | `65536` | Completion cap per request |
-| `reasoning_effort` | no | `high` | `low`/`medium`/`high`/`max` or empty for the model default |
+| `reasoning_effort` | no | `medium` | `low`/`medium`/`high`/`max` or empty for the model default. The audited `high` default caused the provider to abort generation (`finish_reason=error`) after ~16 minutes on the live canary; `medium` is the measured, working default |
 | `test_conventions` | no | `""` | Repo test layout so suggested tests are realistic |
 | `gate` | no | `false` | When `true` a red verdict also fails the Actions job |
 | `allow_draft` | no | `false` | Review a draft on purpose (manual dispatch) |
