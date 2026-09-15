@@ -175,6 +175,17 @@ class InlineExtractionTests(unittest.TestCase):
             self.extract(gh)
         self.assertEqual(2, caught.exception.code)
 
+    def test_should_reject_a_result_from_an_unpinned_tooling_revision(self):
+        envelope = support.envelope_for(self.pr)
+        envelope["tooling_revision"] = "c" * 40
+        gh = FakeGh(self.pr, [full_comment(envelope)], run=run_payload())
+        try:
+            E.verify_provenance(gh, support.REPO, envelope, expected_tooling_sha="d" * 40)
+            self.fail("an unpinned tooling revision must be rejected")
+        except E.ExtractionError as caught:
+            self.assertEqual(3, caught.code)
+        E.verify_provenance(gh, support.REPO, envelope, expected_tooling_sha="c" * 40)
+
     def test_should_use_the_newest_of_duplicate_trusted_comments(self):
         newer = full_comment(support.envelope_for(self.pr, run_id="777"))
         newer["id"] = 9

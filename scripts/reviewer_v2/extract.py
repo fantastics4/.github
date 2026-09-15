@@ -224,7 +224,9 @@ def verify_metadata(envelope, repo, number, pr):
     return True
 
 
-def verify_provenance(gh, repo, envelope, expected_path=EXPECTED_WORKFLOW_PATH):
+def verify_provenance(
+    gh, repo, envelope, expected_path=EXPECTED_WORKFLOW_PATH, expected_tooling_sha=None
+):
     run_id = str(envelope.get("run_id") or "")
     if not run_id.isdigit():
         raise ExtractionError(3, f"the result has no usable run id ({run_id!r})")
@@ -244,6 +246,16 @@ def verify_provenance(gh, repo, envelope, expected_path=EXPECTED_WORKFLOW_PATH):
     associated = [item.get("number") for item in (run.get("pull_requests") or [])]
     if associated and int(envelope.get("pr_number")) not in associated:
         raise ExtractionError(3, f"run {run_id} is not associated with this pull request")
+    if expected_tooling_sha:
+        # The REST API does not expose the reusable workflow revision, so consumers can
+        # pin the expected release: the reviewer records the value it checked out.
+        recorded = str(envelope.get("tooling_revision") or "")
+        if recorded != expected_tooling_sha:
+            raise ExtractionError(
+                3,
+                f"the result was produced by tooling {recorded!r}, not the pinned "
+                f"release {expected_tooling_sha!r}",
+            )
     return run
 
 
@@ -326,7 +338,9 @@ def extract(repo, number, gh=None, actors=None):
             "review; nothing is consumable as approval",
         )
     verify_status(gh, repo, trusted)
-    verify_provenance(gh, repo, trusted)
+    verify_provenance(
+        gh, repo, trusted, expected_tooling_sha=os.environ.get("EXPECTED_TOOLING_SHA") or None
+    )
 
     envelope = trusted
     artifact = trusted.get("artifact") or {}
