@@ -63,10 +63,19 @@ on:
 | `allow_draft` | no | `false` | Review a draft on purpose (manual dispatch) |
 | `blocking_categories` | no | `security,data-loss,breaking` | Categories that block |
 | `blocking_bug_severities` | no | `critical,high` | Bug severities that block |
+| `max_chunks` | no | `12` | Maximum model requests per review |
+| `request_timeout_seconds` | no | `600` | Per-request HTTP timeout |
+| `max_attempts` | no | `3` | Bounded transport retries per request |
+| `total_budget_seconds` | no | `1500` | Whole-run budget (retries + publication must fit the 30-minute job cap) |
+| `completion_reserve_tokens` | no | `4096` | Context kept clear for the completion when sizing chunks |
+| `model_context_tokens` | no | `200000` | Assumed model context used to size chunks (lower it if the provider rejects a large prompt; a provider context rejection is reported as an explicit budget failure) |
+| `max_comment_chars` | no | `60000` | Comment size cap; larger results go to the artifact |
 
-Additional budgets are environment-level and validated before any paid inference:
-`REQUEST_TIMEOUT_SECONDS`, `MAX_ATTEMPTS`, `TOTAL_BUDGET_SECONDS`, `MAX_CHUNKS`,
-`COMPLETION_RESERVE_TOKENS`, `MODEL_CONTEXT_TOKENS`, `MAX_COMMENT_CHARS`.
+Every budget above is a **typed reusable-workflow input** (so it is actually reachable) and
+is validated in Python before any paid inference. `TRUSTED_ACTORS` (which bot comment may be
+consumed) is deliberately **not** a workflow input: it is a security boundary, changed only
+by a reviewed edit of the shared workflow. The refresh dispatcher takes `REFRESH_MAX_PRS`
+(default 25) and `REFRESH_PUBLISH` (default `true`) to bound and dry-run its work.
 
 ### Findings are probabilistic; the verdict is not
 

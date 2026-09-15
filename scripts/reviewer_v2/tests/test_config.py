@@ -50,6 +50,51 @@ class DefaultTests(unittest.TestCase):
             self.assertIsNotNone(row, f"README has no input row for {name}")
             self.assertIn(value, row.group(1), f"README row for {name} is out of date")
 
+    def test_should_expose_every_budget_as_a_typed_workflow_input(self):
+        import yaml
+
+        path = os.path.join(ROOT, ".github", "workflows", "llm-pr-review-v2.yml")
+        with open(path, encoding="utf-8") as handle:
+            doc = yaml.safe_load(handle)
+            handle.seek(0)
+            text = handle.read()
+        call = doc[True]["workflow_call"] if True in doc else doc["on"]["workflow_call"]
+        inputs = call["inputs"]
+        expected = {
+            "model": C.DEFAULT_MODEL,
+            "max_diff_chars": C.DEFAULT_MAX_DIFF_CHARS,
+            "max_completion_tokens": C.DEFAULT_MAX_COMPLETION_TOKENS,
+            "reasoning_effort": C.DEFAULT_REASONING_EFFORT,
+            "max_chunks": C.DEFAULT_MAX_CHUNKS,
+            "request_timeout_seconds": C.DEFAULT_REQUEST_TIMEOUT_SECONDS,
+            "max_attempts": C.DEFAULT_MAX_ATTEMPTS,
+            "total_budget_seconds": C.DEFAULT_TOTAL_BUDGET_SECONDS,
+            "completion_reserve_tokens": C.DEFAULT_COMPLETION_RESERVE_TOKENS,
+            "model_context_tokens": C.DEFAULT_MODEL_CONTEXT_TOKENS,
+            "max_comment_chars": C.DEFAULT_MAX_COMMENT_CHARS,
+        }
+        for name, default in expected.items():
+            self.assertIn(name, inputs, f"{name} is not a reusable-workflow input")
+            self.assertEqual(default, inputs[name]["default"], f"{name} default drifted")
+        # Every tunable must also be wired to the tooling, or it stays unreachable.
+        for env_name in (
+            "MAX_DIFF_CHARS",
+            "MAX_CHUNKS",
+            "REQUEST_TIMEOUT_SECONDS",
+            "MAX_ATTEMPTS",
+            "TOTAL_BUDGET_SECONDS",
+            "COMPLETION_RESERVE_TOKENS",
+            "MODEL_CONTEXT_TOKENS",
+            "MAX_COMMENT_CHARS",
+        ):
+            self.assertIn(env_name, text, f"{env_name} is not passed to the tooling")
+        # Worst-case retries plus publication must fit inside the job timeout.
+        timeout = doc["jobs"]["review"]["timeout-minutes"]
+        self.assertLess(C.DEFAULT_TOTAL_BUDGET_SECONDS, timeout * 60)
+        # The bot-identity allowlist is a security boundary, not a caller knob.
+        self.assertNotIn("trusted_actors", inputs)
+        self.assertNotIn("TRUSTED_ACTORS", text)
+
     def test_should_document_pr_number_as_required(self):
         with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as handle:
             readme = handle.read()

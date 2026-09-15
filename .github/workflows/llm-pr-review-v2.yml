@@ -29,6 +29,34 @@ on:
         required: false
         type: string
         default: high
+      max_chunks:
+        required: false
+        type: number
+        default: 12
+      request_timeout_seconds:
+        required: false
+        type: number
+        default: 600
+      max_attempts:
+        required: false
+        type: number
+        default: 3
+      total_budget_seconds:
+        required: false
+        type: number
+        default: 1500
+      completion_reserve_tokens:
+        required: false
+        type: number
+        default: 4096
+      model_context_tokens:
+        required: false
+        type: number
+        default: 200000
+      max_comment_chars:
+        required: false
+        type: number
+        default: 60000
       test_conventions:
         required: false
         type: string
@@ -110,6 +138,13 @@ jobs:
           MAX_DIFF_CHARS: ${{ inputs.max_diff_chars }}
           MAX_COMPLETION_TOKENS: ${{ inputs.max_completion_tokens }}
           REASONING_EFFORT: ${{ inputs.reasoning_effort }}
+          MAX_CHUNKS: ${{ inputs.max_chunks }}
+          REQUEST_TIMEOUT_SECONDS: ${{ inputs.request_timeout_seconds }}
+          MAX_ATTEMPTS: ${{ inputs.max_attempts }}
+          TOTAL_BUDGET_SECONDS: ${{ inputs.total_budget_seconds }}
+          COMPLETION_RESERVE_TOKENS: ${{ inputs.completion_reserve_tokens }}
+          MODEL_CONTEXT_TOKENS: ${{ inputs.model_context_tokens }}
+          MAX_COMMENT_CHARS: ${{ inputs.max_comment_chars }}
           TEST_CONVENTIONS: ${{ inputs.test_conventions }}
           GATE: ${{ inputs.gate }}
           ALLOW_DRAFT: ${{ inputs.allow_draft }}
