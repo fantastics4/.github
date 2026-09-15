@@ -1,0 +1,12 @@
+# Minimal lint/test configuration for the reviewer tooling (scripts/reviewer_v2).
+# The legacy scripts keep their historical formatting and are excluded here.
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/llm_review.py" = ["E501", "B008"]
