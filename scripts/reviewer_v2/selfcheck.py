@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Static self-check for the release bundle (used by tooling CI, no network).
 
-python3 selfcheck.py                  # triggers, pins, placeholders, legacy paths
+python3 selfcheck.py                  # triggers, pins, placeholders, retired legacy paths
 python3 selfcheck.py --check-migration # the wrapper and the tooling ship together
 """
 
@@ -20,10 +20,13 @@ PIN = re.compile(r"uses:\s*\S+@([0-9a-f]{40})\b")
 CALLER = ROOT / "callers" / "pr-llm-review-v2.yml"
 REFRESH = ROOT / "callers" / "pr-llm-review-refresh-v2.yml"
 REUSABLE = ROOT / ".github" / "workflows" / "llm-pr-review-v2.yml"
-LEGACY = (
+# Retired legacy reviewer (unpinned, @main). It must not come back: a public file here
+# that runs from @main would execute any later push with the caller's secrets.
+RETIRED = (
     ROOT / "callers" / "pr-llm-review.yml",
     ROOT / ".github" / "workflows" / "llm-pr-review.yml",
     ROOT / "scripts" / "llm_review.py",
+    ROOT / "scripts" / "apply-callers.sh",
 )
 
 
@@ -53,9 +56,9 @@ def problems() -> list:
     refresh = REFRESH.read_text(encoding="utf-8") if REFRESH.exists() else ""
     if "OPENROUTER" in refresh:
         found.append("the refresh dispatcher must not hold the model secret")
-    for path in LEGACY:
-        if not path.exists():
-            found.append(f"legacy path removed before migration finished: {path.name}")
+    for path in RETIRED:
+        if path.exists():
+            found.append(f"retired legacy path is back: {path.relative_to(ROOT)}")
     return found
 
 

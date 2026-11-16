@@ -1,4 +1,4 @@
-"""T007/T009 regression tests: workflow triggers, pinning and preserved legacy paths."""
+"""T007/T009 regression tests: workflow triggers, pinning and the retired legacy paths."""
 
 import os
 import re
@@ -13,6 +13,7 @@ REUSABLE = os.path.join(ROOT, ".github", "workflows", "llm-pr-review-v2.yml")
 LEGACY_WORKFLOW = os.path.join(ROOT, ".github", "workflows", "llm-pr-review.yml")
 LEGACY_SCRIPT = os.path.join(ROOT, "scripts", "llm_review.py")
 LEGACY_CALLER = os.path.join(ROOT, "callers", "pr-llm-review.yml")
+LEGACY_INSTALLER = os.path.join(ROOT, "scripts", "apply-callers.sh")
 PIN = re.compile(r"uses:\s*\S+@([0-9a-f]{40})")
 
 
@@ -150,22 +151,18 @@ class ReusableWorkflowTests(unittest.TestCase):
         self.assertNotIn("scripts/llm_review.py", self.text)
 
 
-class LegacyPreservationTests(unittest.TestCase):
-    """While consumers remain on the legacy caller, its behaviour must not change."""
+class LegacyRetirementTests(unittest.TestCase):
+    """Every consumer runs v2 from a release pin; the @main legacy reviewer is gone."""
 
-    def test_should_keep_the_legacy_workflow_script_and_caller(self):
-        for path in (LEGACY_WORKFLOW, LEGACY_SCRIPT, LEGACY_CALLER):
-            self.assertTrue(os.path.exists(path), path)
+    def test_should_not_ship_the_legacy_workflow_script_or_caller(self):
+        for path in (LEGACY_WORKFLOW, LEGACY_SCRIPT, LEGACY_CALLER, LEGACY_INSTALLER):
+            self.assertFalse(os.path.exists(path), path)
 
-    def test_should_leave_the_legacy_caller_contract_untouched(self):
-        text = raw(LEGACY_CALLER)
-        self.assertIn('workflows: ["CI"]', text)
-        self.assertIn("llm-pr-review.yml@main", text)
-
-    def test_should_keep_the_legacy_workflow_defaults_untouched(self):
-        text = raw(LEGACY_WORKFLOW)
-        self.assertIn("default: 500000", text)
-        self.assertIn("scripts/llm_review.py", text)
+    def test_should_not_reference_a_branch_pinned_workflow(self):
+        for name in os.listdir(os.path.join(ROOT, ".github", "workflows")):
+            text = raw(os.path.join(ROOT, ".github", "workflows", name))
+            self.assertNotIn("ref: main", text, name)
+            self.assertNotIn(".yml@main", text, name)
 
 
 if __name__ == "__main__":

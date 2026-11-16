@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Branch-aware, repeatable installation of the v2 reviewer callers.
 
-Replaces the default-branch-only behaviour of scripts/apply-callers.sh (kept for the
-legacy rollout). It compares content before writing, uses one rollout branch per
+Replaces the default-branch-only scripts/apply-callers.sh (retired in spec 004).
+It compares content before writing, uses one rollout branch per
 (target branch, release), queries existing PRs explicitly, reports secret-name
 readiness without reading values, and never writes during a dry run.
 

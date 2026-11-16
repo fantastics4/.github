@@ -13,16 +13,12 @@ The reviewer publishes, on every reviewed revision:
   payload digest, used for large results and as verifiable evidence. The attempt is part of
   the name because the artifact API rejects a repeated name inside one run.
 
-### Two workflows, one migration window
+### One workflow, pinned releases
 
-| Path | State | Executed revision |
-|---|---|---|
-| `.github/workflows/llm-pr-review-v2.yml` + `scripts/reviewer_v2/` | **current, hardened** | `job.workflow_sha` (same commit as the caller pin) |
-| `.github/workflows/llm-pr-review.yml` + `scripts/llm_review.py` | legacy, still executed by consumers pinned to `@main` | `@main` (unchanged) |
-
-Legacy callers keep working unchanged until they migrate. Nothing in
-`scripts/reviewer_v2/` changes legacy behaviour, and the legacy paths are only retired
-after the installation inventory shows no remaining consumers.
+`.github/workflows/llm-pr-review-v2.yml` + `scripts/reviewer_v2/` is the only reviewer. It
+runs at `job.workflow_sha`, the same commit as the caller pin, so nothing executes from a
+branch. The legacy `@main` reviewer was retired in spec 004 after the inventory showed every
+caller on v2 (see [Legacy workflow](#legacy-workflow)).
 
 ### Triggers
 
@@ -193,8 +189,10 @@ advisory at the platform level even though it always reports red as `failure`.
 
 ### Legacy workflow
 
-`.github/workflows/llm-pr-review.yml`, `scripts/llm_review.py` and
-`callers/pr-llm-review.yml` are untouched and still executed by consumers pinned to
-`@main`. They remain in the repository until the installation inventory shows no
-consumers, and `scripts/apply-callers.sh` (default branch only) is likewise kept for the
-legacy rollout.
+Retired in spec 004 (2026-11-16): `.github/workflows/llm-pr-review.yml`,
+`scripts/llm_review.py`, `callers/pr-llm-review.yml` and `scripts/apply-callers.sh` were
+removed once every organization repository called v2 from a release SHA. They ran from
+`@main`, so in this public repository any later push to `main` would have executed with
+the callers' secrets. `selfcheck.py` fails if any of them comes back. A repository still on
+the legacy caller fails to resolve `llm-pr-review.yml@main`; install the v2 caller with
+`apply_callers.py`.
