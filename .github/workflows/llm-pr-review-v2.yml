@@ -1,7 +1,7 @@
 name: LLM PR Review v2 (reusable)
 
-# Versioned, hardened reviewer. The legacy workflow (llm-pr-review.yml) is left
-# untouched so existing callers keep working until they migrate to this file.
+# Versioned, hardened reviewer. It replaced the legacy @main workflow
+# (llm-pr-review.yml), retired in spec 004 once every caller had migrated.
 #
 # Security: the pull-request code is never checked out and never executed. Only the
 # trusted tooling repository is fetched, at the same revision as this workflow
